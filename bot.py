@@ -4,6 +4,7 @@ import pandas as pd
 import time
 import os
 import json
+from typing import List, Dict
 # import matplotlib.pyplot as plt
 
 from .config import *
@@ -141,7 +142,7 @@ class ChatBot:
         self.__decoder_model = tf.keras.models.Model([decoder_inputs] + decoder_states_inputs,
                                                      [decoder_outputs] + decoder_states)
 
-    def __init__(self, dataset_path: list[str], input_label: list[str] = ['Q'], output_label: list[str] = ['A'], use_space_correction: bool = True, data_start: list[int] = None, data_end: list[int] = None):
+    def __init__(self, dataset_path: List[str], input_label: List[str] = ['Q'], output_label: List[str] = ['A'], use_space_correction: bool = True, data_start: List[int] = None, data_end: List[int] = None):
         """
         챗봇을 초기화합니다.
 
@@ -236,7 +237,7 @@ class ChatBot:
 
         return sentence
 
-    def train(self, epochs: int = 100, batch_size: int = 64, verbose: int = 0, EarlyStopping: bool = False, patience: int = 3, monitor: str = 'loss') -> list:
+    def train(self, epochs: int = 100, batch_size: int = 64, verbose: int = 0, EarlyStopping: bool = False, patience: int = 3, monitor: str = 'loss') -> Dict[str, List[float]]:
         """
         챗봇을 1 step 학습시킵니다.
 
@@ -249,19 +250,25 @@ class ChatBot:
             monitor (str): EarlyStopping을 사용할 때, 어떤 값을 기준으로 하는지
 
         Returns:
-            모델의 history (list)
+            모델의 history
         """
+
+        callback_list = None
+
+        if EarlyStopping:
+            callback_list = [tf.keras.callbacks.EarlyStopping(patience=patience, monitor=monitor)]
+
         # 훈련 시작
         history = self.__model.fit([self.__x_encoder, self.__x_decoder],
                                    self.__y_decoder,
                                    epochs=epochs,
                                    batch_size=batch_size,
                                    verbose=verbose,
-                                   callbacks=[tf.keras.callbacks.EarlyStopping(patience=patience, monitor=monitor)] if EarlyStopping else None)
+                                   callbacks=callback_list)
 
-        return history
+        return history.history
 
-    def repeat_train(self, steps: int = 20, step_verbose: bool = True, epochs: int = 100, batch_size: int = 64, epoch_verbose: int = 0, EarlyStopping: bool = False, patience: int = 3, monitor: str = 'loss') -> list:
+    def repeat_train(self, steps: int = 20, step_verbose: bool = True, epochs: int = 100, batch_size: int = 64, epoch_verbose: int = 0, EarlyStopping: bool = False, patience: int = 3, monitor: str = 'loss') -> List[Dict[str, List[float]]]:
         """
         챗봇을 여러 step 학습시킵니다.
 
@@ -276,8 +283,9 @@ class ChatBot:
             monitor (str): EarlyStopping을 사용할 때, 어떤 값을 기준으로 하는지
 
         Returns:
-            모델의 history (list)
+            모델의 history
         """
+
         historys = []
 
         for step in range(steps):
@@ -286,13 +294,18 @@ class ChatBot:
 
             start = time.time()
 
+            callback_list = None
+
+            if EarlyStopping:
+                callback_list = [tf.keras.callbacks.EarlyStopping(patience=patience, monitor=monitor)]
+
             # 훈련 시작
             history = self.__model.fit([self.__x_encoder, self.__x_decoder],
                                        self.__y_decoder,
                                        epochs=epochs,
                                        batch_size=batch_size,
                                        verbose=epoch_verbose,
-                                       callbacks=[tf.keras.callbacks.EarlyStopping(patience=patience, monitor=monitor)] if EarlyStopping else None)
+                                       callbacks=callback_list)
 
             if step_verbose:
                 print("accuracy: {acc}, loss: {loss}".format(acc=history.history['accuracy'][-1], loss=history.history['loss'][-1]))
@@ -300,7 +313,7 @@ class ChatBot:
                 print("time required : {}s".format(time.time() - start))
                 print()
 
-            historys.append(history)
+            historys.append(history.history)
 
         return historys
 
@@ -324,6 +337,10 @@ class ChatBot:
         self.__encoder_model = tf.keras.models.load_model("{}/encoder_model.h5".format(path), compile=False)
         self.__decoder_model = tf.keras.models.load_model("{}/decoder_model.h5".format(path), compile=False)
 
+        self.__model.compile(optimizer='rmsprop',
+                             loss='categorical_crossentropy',
+                             metrics=['accuracy'])
+
         with open((path + '/words.json'), 'r') as file:
             self.__words = json.load(file)
 
@@ -332,6 +349,35 @@ class ChatBot:
         self.__index_to_word = {index: word for index, word in enumerate(self.__words)}
 
         print("Loaded the model from '" + filepath + "'")
+
+    def load_weights(self, filepath: str):
+        """
+            저장된 모델의 가중치를 불러옵니다.
+
+            Args:
+                filepath (str): 불러올 파일의 경로
+        """
+
+        path = filepath if filepath[-1] != '/' else filepath[:-1]
+
+        if not os.path.isdir(path):
+            raise FileNotFoundError('파일을 찾을 수 없습니다.')
+
+        if not (os.path.isfile("{}/checkpoint.ckpt".format(path)) and os.path.isfile("{}/words.json".format(path))):
+            raise FileNotFoundError('파일을 찾을 수 없습니다.')
+
+        self.__model.load_weights("{}/model.ckpt".format(path))
+        self.__encoder_model.load_weights("{}/encoder_model.ckpt".format(path))
+        self.__decoder_model.load_weights("{}/decoder_model.ckpt".format(path))
+
+        with open((path + '/words.json'), 'r') as file:
+            self.__words = json.load(file)
+
+        # 단어와 인덱스의 딕셔너리 생성
+        self.__word_to_index = {word: index for index, word in enumerate(self.__words)}
+        self.__index_to_word = {index: word for index, word in enumerate(self.__words)}
+
+        print("Loaded the model's weights from '" + filepath + "'")
 
     def save(self, filepath: str):
         """
@@ -354,6 +400,28 @@ class ChatBot:
             json.dump(self.__words, file)
 
         print("Saved the model in '" + filepath + "'")
+
+    def save_weights(self, filepath: str):
+        """
+            현재 모델의 가중치를 저장합니다.
+
+            Args:
+                filepath (str): 저장할 파일의 경로
+        """
+
+        path = filepath if filepath[-1] != '/' else filepath[:-1]
+
+        if not os.path.isdir(path):
+            os.mkdir(path + '/')
+
+        self.__model.save_weights("{}/model.ckpt".format(path))
+        self.__encoder_model.save_weights("{}/encoder_model.ckpt".format(path))
+        self.__decoder_model.save_weights("{}/decoder_model.ckpt".format(path))
+
+        with open((path + '/words.json'), 'w') as file:
+            json.dump(self.__words, file)
+
+        print("Saved the model's weights in '" + filepath + "'")
 
     def summary(self, model_type: str = 'model'):
         """
