@@ -4,7 +4,7 @@ import pandas as pd
 import time
 import os
 import json
-from typing import List, Dict
+from typing import List, Dict, Tuple
 # import matplotlib.pyplot as plt
 
 from .config import *
@@ -440,7 +440,7 @@ class ChatBot:
         else:
             print('Unknown model type')
 
-    def predict(self, text: str) -> str:
+    def predict(self, text: str) -> Tuple[str, bool]:
         """
         입력 값에 맞는 출력 문장을 생성합니다.
 
@@ -448,7 +448,7 @@ class ChatBot:
             text (str): 입력 값
 
         Returns:
-            출력 값 (str)
+            출력 값, 공백 처리 되었는지 (Tuple[str, bool])
         """
         # 문장을 인덱스로 변환
         input_seq = make_predict_input(text, self.__word_to_index)
@@ -459,6 +459,6 @@ class ChatBot:
         ns = re.sub(r" ", "", text)
 
         if ns in self.__original_answer:
-            return self.__original_answer[ns]
+            return self.__original_answer[ns], True
         else:
-            return text
+            return text, False
