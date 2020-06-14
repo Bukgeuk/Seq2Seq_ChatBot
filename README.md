@@ -7,9 +7,10 @@
 (버그나 추가할만한 점 이슈로 남겨주시면 할 수 있는 선에서 해보겠습니다)
 
 ## Required modules
-* tensorflow>=2.0  
-* numpy  
+* tensorflow>=2.0.0 
+* numpy
 * pandas
+* KoNLPy
 
 
 # Examples
